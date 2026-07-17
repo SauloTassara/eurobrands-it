@@ -18,3 +18,17 @@ export function supportsWebGL(){
     return false;
   }catch{return false;}
 }
+
+export function detectCapabilities(){
+  const supports=(property,value)=>{try{return CSS.supports(property,value);}catch{return false;}};
+  return{
+    webgl2:typeof WebGL2RenderingContext!=='undefined',
+    scrollTimeline:supports('animation-timeline','scroll()'),
+    viewTransition:typeof document.startViewTransition==='function',
+    oklch:supports('color','oklch(50% 0.1 100)'),
+    p3:supports('color','color(display-p3 1 0.5 0.3)')&&matchMedia('(color-gamut: p3)').matches,
+    containerQueries:supports('container-type','inline-size'),
+    reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
+    coarsePointer:matchMedia('(pointer: coarse)').matches
+  };
+}

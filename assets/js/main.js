@@ -1,97 +1,40 @@
-import{bindLanguageLinks}from'./i18n.js?v=20260717-windows-webgl-3';
-import{getPerformanceTier,supportsWebGL}from'./capabilities.js?v=20260717-windows-webgl-3';
+import{bindLanguageLinks}from'./i18n.js?v=20260717-origin-in-motion-2';
+import{detectCapabilities,getPerformanceTier,supportsWebGL}from'./capabilities.js?v=20260717-origin-in-motion-2';
+import{initNarrative}from'./narrative.js?v=20260717-origin-in-motion-2';
 
-const BUILD_ID='20260717-windows-webgl-3';
-const body=document.body;
-const shell=document.querySelector('.site-shell');
-const drawer=document.querySelector('#contact-panel');
-const backdrop=document.querySelector('.drawer-backdrop');
-const openers=[...document.querySelectorAll('[data-open-contact]')];
-const closer=drawer?.querySelector('[data-close-contact]');
-const motionButton=document.querySelector('[data-motion-toggle]');
-const retryButton=document.querySelector('[data-webgl-retry]');
-const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
-const finePointer=matchMedia('(hover:hover) and (pointer:fine)');
-const motionStorageKey='eurobrands:3d-motion';
-let previousFocus=null,sceneController=null,webglInitializing=false;
+const BUILD_ID='20260717-origin-in-motion-2';
+const body=document.body,shell=document.querySelector('.site-shell'),drawer=document.querySelector('#contact-panel'),backdrop=document.querySelector('.drawer-backdrop');
+const openers=[...document.querySelectorAll('[data-open-contact]')],closer=drawer?.querySelector('[data-close-contact]'),motionButton=document.querySelector('[data-motion-toggle]'),retryButton=document.querySelector('[data-webgl-retry]');
+const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)'),finePointer=matchMedia('(hover:hover) and (pointer:fine)'),motionStorageKey='eurobrands:3d-motion';
+let previousFocus=null,sceneController=null,narrativeController=null,webglInitializing=false,narrativeInitializing=false;
 
-drawer?.setAttribute('aria-hidden','true');
-bindLanguageLinks();
-
+drawer?.setAttribute('aria-hidden','true');bindLanguageLinks();
+const capabilityMap=detectCapabilities();
+for(const[name,enabled]of Object.entries(capabilityMap))document.documentElement.classList.toggle(`${enabled?'supports':'no'}-${name.replace(/[A-Z]/g,letter=>`-${letter.toLowerCase()}`)}`,enabled);
 function storedMotion(){try{return localStorage.getItem(motionStorageKey);}catch{return null;}}
 let motionEnabled=!reducedMotion.matches||storedMotion()==='enabled';
 let pointerTargetX=innerWidth*.68,pointerTargetY=innerHeight*.46,pointerX=pointerTargetX,pointerY=pointerTargetY,pointerOpacity=0,pointerOpacityTarget=0,pointerFrame=0,pointerLast=performance.now(),pointerBound=false;
-
-function updatePointer(event){
-  if(!motionEnabled||!finePointer.matches)return;
-  pointerTargetX=event.clientX;pointerTargetY=event.clientY;pointerOpacityTarget=1;
-}
+function updatePointer(event){if(!motionEnabled||!finePointer.matches)return;pointerTargetX=event.clientX;pointerTargetY=event.clientY;pointerOpacityTarget=1;}
 function releasePointer(){pointerOpacityTarget=0;}
-function animatePointer(now){
-  if(!pointerBound)return;
-  const delta=Math.min((now-pointerLast)/1000,.05),damping=1-Math.exp(-delta*7);pointerLast=now;
-  pointerX+=(pointerTargetX-pointerX)*damping;pointerY+=(pointerTargetY-pointerY)*damping;pointerOpacity+=(pointerOpacityTarget-pointerOpacity)*damping;
-  shell?.style.setProperty('--pointer-x',`${(pointerX/innerWidth)*100}%`);shell?.style.setProperty('--pointer-y',`${(pointerY/innerHeight)*100}%`);shell?.style.setProperty('--pointer-opacity',pointerOpacity.toFixed(3));
-  pointerFrame=requestAnimationFrame(animatePointer);
-}
-function setPointerMotion(enabled){
-  const shouldRun=Boolean(shell&&finePointer.matches&&enabled&&!document.hidden);
-  if(shouldRun===pointerBound)return;
-  pointerBound=shouldRun;
-  if(shouldRun){shell.addEventListener('pointermove',updatePointer,{passive:true});shell.addEventListener('pointerleave',releasePointer,{passive:true});pointerLast=performance.now();pointerFrame=requestAnimationFrame(animatePointer);}
-  else{shell?.removeEventListener('pointermove',updatePointer);shell?.removeEventListener('pointerleave',releasePointer);cancelAnimationFrame(pointerFrame);pointerOpacityTarget=0;pointerOpacity=0;shell?.style.setProperty('--pointer-opacity','0');}
-}
-setPointerMotion(motionEnabled);
-document.addEventListener('visibilitychange',()=>setPointerMotion(motionEnabled));
+function animatePointer(now){if(!pointerBound)return;const delta=Math.min((now-pointerLast)/1000,.05),damping=1-Math.exp(-delta*7);pointerLast=now;pointerX+=(pointerTargetX-pointerX)*damping;pointerY+=(pointerTargetY-pointerY)*damping;pointerOpacity+=(pointerOpacityTarget-pointerOpacity)*damping;shell?.style.setProperty('--pointer-x',`${pointerX/innerWidth*100}%`);shell?.style.setProperty('--pointer-y',`${pointerY/innerHeight*100}%`);shell?.style.setProperty('--pointer-opacity',pointerOpacity.toFixed(3));pointerFrame=requestAnimationFrame(animatePointer);}
+function setPointerMotion(enabled){const shouldRun=Boolean(shell&&finePointer.matches&&enabled&&!document.hidden);if(shouldRun===pointerBound)return;pointerBound=shouldRun;if(shouldRun){shell.addEventListener('pointermove',updatePointer,{passive:true});shell.addEventListener('pointerleave',releasePointer,{passive:true});pointerLast=performance.now();pointerFrame=requestAnimationFrame(animatePointer);}else{shell?.removeEventListener('pointermove',updatePointer);shell?.removeEventListener('pointerleave',releasePointer);cancelAnimationFrame(pointerFrame);pointerOpacityTarget=pointerOpacity=0;shell?.style.setProperty('--pointer-opacity','0');}}
+setPointerMotion(motionEnabled);document.addEventListener('visibilitychange',()=>setPointerMotion(motionEnabled));
 
-function focusable(){
-  return[...drawer.querySelectorAll('a[href],button:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(node=>!node.hidden);
-}
-function openDrawer(){
-  previousFocus=document.activeElement;body.classList.add('drawer-open');drawer.setAttribute('aria-hidden','false');openers.forEach(button=>button.setAttribute('aria-expanded','true'));closer.focus({preventScroll:true});
-  if(window.gsap&&!reducedMotion.matches){gsap.fromTo('.contact-card',{y:18,opacity:0},{y:0,opacity:1,duration:.65,stagger:.09,ease:'power3.out',delay:.12});gsap.fromTo('.membership',{y:12,opacity:0},{y:0,opacity:1,duration:.55,ease:'power2.out',delay:.3});}
-}
+function focusable(){return[...drawer.querySelectorAll('a[href],button:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(node=>!node.hidden);}
+function openDrawer(){previousFocus=document.activeElement;body.classList.add('drawer-open');drawer.setAttribute('aria-hidden','false');openers.forEach(button=>button.setAttribute('aria-expanded','true'));setTimeout(()=>closer?.focus({preventScroll:true}),460);if(window.gsap&&!reducedMotion.matches){gsap.fromTo('.contact-card',{x:24,opacity:0},{x:0,opacity:1,duration:.55,stagger:.08,ease:'power3.out',delay:.12});}}
 function closeDrawer(){body.classList.remove('drawer-open');drawer.setAttribute('aria-hidden','true');openers.forEach(button=>button.setAttribute('aria-expanded','false'));previousFocus?.focus({preventScroll:true});}
 openers.forEach(button=>button.addEventListener('click',openDrawer));closer?.addEventListener('click',closeDrawer);backdrop?.addEventListener('click',closeDrawer);
-document.addEventListener('keydown',event=>{
-  if(!body.classList.contains('drawer-open'))return;
-  if(event.key==='Escape'){event.preventDefault();closeDrawer();return;}
-  if(event.key!=='Tab')return;const items=focusable();if(!items.length)return;const first=items[0],last=items[items.length-1];
-  if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
-});
+document.addEventListener('keydown',event=>{if(!body.classList.contains('drawer-open'))return;if(event.key==='Escape'){event.preventDefault();closeDrawer();return;}if(event.key!=='Tab')return;const items=focusable();if(!items.length)return;const first=items[0],last=items[items.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}});
 
-function intro(){
-  if(!window.gsap||reducedMotion.matches)return;
-  gsap.set('[data-reveal]',{yPercent:110,opacity:0});const tl=gsap.timeline({defaults:{ease:'power3.out'}});
-  tl.fromTo('.brand',{opacity:0,y:-8},{opacity:1,y:0,duration:.45}).fromTo('.header-actions',{opacity:0,y:-8},{opacity:1,y:0,duration:.42},'<.1').fromTo('.topline',{opacity:0,y:10},{opacity:1,y:0,duration:.38},'<.04').to('[data-reveal]',{yPercent:0,opacity:1,duration:.64,stagger:.07},'<.03').fromTo('.intro',{opacity:0,y:14},{opacity:1,y:0,duration:.48},'<.22').fromTo('.hero-actions',{opacity:0,y:12},{opacity:1,y:0,duration:.42},'<.1').fromTo('.territories',{opacity:0},{opacity:1,duration:.5},'<.12').fromTo('.site-footer',{opacity:0},{opacity:1,duration:.42},'<');
-}
-intro();
+const perf=getPerformanceTier();document.documentElement.dataset.performance=perf.tier;document.documentElement.classList.toggle('low-performance',perf.tier==='low');
+function updateMotionButton(){if(!motionButton)return;motionButton.setAttribute('aria-pressed',String(motionEnabled));motionButton.textContent=motionEnabled?motionButton.dataset.reduceLabel:motionButton.dataset.enableLabel;}
+function applyMotion(enabled,persist=false){motionEnabled=Boolean(enabled);if(persist){try{localStorage.setItem(motionStorageKey,motionEnabled?'enabled':'reduced');}catch{}}updateMotionButton();setPointerMotion(motionEnabled);sceneController?.setMotionEnabled?.(motionEnabled);}
+updateMotionButton();motionButton?.addEventListener('click',()=>applyMotion(!motionEnabled,true));
 
-const perf=getPerformanceTier();
-document.documentElement.dataset.performance=perf.tier;
-function updateMotionButton(){
-  if(!motionButton)return;motionButton.setAttribute('aria-pressed',String(motionEnabled));motionButton.textContent=motionEnabled?motionButton.dataset.reduceLabel:motionButton.dataset.enableLabel;
-}
-function applyMotion(enabled,persist=false){
-  motionEnabled=Boolean(enabled);if(persist){try{localStorage.setItem(motionStorageKey,motionEnabled?'enabled':'reduced');}catch{}}
-  updateMotionButton();setPointerMotion(motionEnabled);sceneController?.setMotionEnabled(motionEnabled);
-}
-updateMotionButton();
-motionButton?.addEventListener('click',()=>applyMotion(!motionEnabled,true));
-reducedMotion.addEventListener?.('change',event=>applyMotion(!event.matches||storedMotion()==='enabled'));
-
+async function initializeNarrative(){if(narrativeInitializing)return;narrativeInitializing=true;try{if(document.readyState==='loading')await new Promise(resolve=>addEventListener('DOMContentLoaded',resolve,{once:true}));narrativeController?.dispose?.();narrativeController=await initNarrative(sceneController,{reducedMotion:reducedMotion.matches});}finally{narrativeInitializing=false;}}
+reducedMotion.addEventListener?.('change',event=>{applyMotion(!event.matches||storedMotion()==='enabled');initializeNarrative();});
 function webglFailed(){body.classList.remove('webgl-pending','webgl-loading','webgl-ready');body.classList.add('webgl-failed');}
-async function initWebGL(){
-  if(webglInitializing)return;
-  if(!supportsWebGL()){webglFailed();return;}
-  webglInitializing=true;body.classList.remove('webgl-failed','webgl-ready');body.classList.add('webgl-pending');
-  const loaderTimer=setTimeout(()=>{if(body.classList.contains('webgl-pending')){body.classList.remove('webgl-pending');body.classList.add('webgl-loading');}},180);
-  try{
-    sceneController?.dispose?.();sceneController=null;
-    const{createScene}=await import(`./scene.js?v=${BUILD_ID}`);
-    sceneController=await createScene(document.querySelector('#scene'),{...perf,reducedMotion:reducedMotion.matches,motionEnabled},{onFirstFrame(){clearTimeout(loaderTimer);body.classList.remove('webgl-pending','webgl-loading','webgl-failed');body.classList.add('webgl-ready');},onFailure(){webglFailed();}});
-  }catch(error){clearTimeout(loaderTimer);console.warn('[EuroBrands WebGL] Scene unavailable',error);webglFailed();}
-  finally{webglInitializing=false;}
-}
+async function initWebGL(){if(webglInitializing)return false;if(!supportsWebGL()){webglFailed();await initializeNarrative();return false;}webglInitializing=true;body.classList.remove('webgl-failed','webgl-ready');body.classList.add('webgl-pending');const loaderTimer=setTimeout(()=>{if(body.classList.contains('webgl-pending')){body.classList.remove('webgl-pending');body.classList.add('webgl-loading');}},180);let success=false;try{sceneController?.dispose?.();sceneController=null;const{createScene}=await import(`./scene.js?v=${BUILD_ID}`);sceneController=await createScene(document.querySelector('#scene'),{...perf,reducedMotion:reducedMotion.matches,motionEnabled},{onFirstFrame(){clearTimeout(loaderTimer);body.classList.remove('webgl-pending','webgl-loading','webgl-failed');body.classList.add('webgl-ready');},onFailure(){webglFailed();}});success=true;}catch(error){clearTimeout(loaderTimer);console.warn('[EuroBrands WebGL] Scene unavailable',error);webglFailed();}finally{webglInitializing=false;}await initializeNarrative();return success;}
 retryButton?.addEventListener('click',initWebGL);
+addEventListener('pagehide',event=>{if(!event.persisted){narrativeController?.dispose?.();sceneController?.dispose?.();}});
 initWebGL();

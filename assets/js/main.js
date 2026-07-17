@@ -1,12 +1,12 @@
-import{bindLanguageLinks}from'./i18n.js?v=20260717-bottle-continuity-1';
-import{detectCapabilities,getPerformanceTier,supportsWebGL}from'./capabilities.js?v=20260717-bottle-continuity-1';
-import{initNarrative}from'./narrative.js?v=20260717-bottle-continuity-1';
+import{bindLanguageLinks}from'./i18n.js?v=20260717-ios-drawer-1';
+import{detectCapabilities,getPerformanceTier,supportsWebGL}from'./capabilities.js?v=20260717-ios-drawer-1';
+import{initNarrative}from'./narrative.js?v=20260717-ios-drawer-1';
 
-const BUILD_ID='20260717-bottle-continuity-1';
-const body=document.body,shell=document.querySelector('.site-shell'),drawer=document.querySelector('#contact-panel'),backdrop=document.querySelector('.drawer-backdrop');
+const BUILD_ID='20260717-ios-drawer-1';
+const html=document.documentElement,body=document.body,shell=document.querySelector('.site-shell'),drawer=document.querySelector('#contact-panel'),backdrop=document.querySelector('.drawer-backdrop');
 const openers=[...document.querySelectorAll('[data-open-contact]')],closer=drawer?.querySelector('[data-close-contact]'),motionButton=document.querySelector('[data-motion-toggle]'),retryButton=document.querySelector('[data-webgl-retry]');
 const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)'),finePointer=matchMedia('(hover:hover) and (pointer:fine)'),motionStorageKey='eurobrands:3d-motion';
-let previousFocus=null,sceneController=null,narrativeController=null,webglInitializing=false,narrativeInitializing=false,sceneFrameReady=false;
+let previousFocus=null,drawerResetTimer=0,drawerFocusTimer=0,sceneController=null,narrativeController=null,webglInitializing=false,narrativeInitializing=false,sceneFrameReady=false;
 
 drawer?.setAttribute('aria-hidden','true');bindLanguageLinks();
 const capabilityMap=detectCapabilities();
@@ -22,8 +22,9 @@ function setPointerMotion(enabled){const shouldRun=Boolean(shell&&finePointer.ma
 setPointerMotion(motionEnabled);document.addEventListener('visibilitychange',()=>setPointerMotion(motionEnabled));
 
 function focusable(){return[...drawer.querySelectorAll('a[href],button:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(node=>!node.hidden);}
-function openDrawer(){previousFocus=document.activeElement;body.classList.add('drawer-open');drawer.setAttribute('aria-hidden','false');openers.forEach(button=>button.setAttribute('aria-expanded','true'));setTimeout(()=>closer?.focus({preventScroll:true}),460);if(window.gsap&&motionEnabled){gsap.fromTo('.contact-card',{x:24,opacity:0},{x:0,opacity:1,duration:.55,stagger:.08,ease:'power3.out',delay:.12});}}
-function closeDrawer(){body.classList.remove('drawer-open');drawer.setAttribute('aria-hidden','true');openers.forEach(button=>button.setAttribute('aria-expanded','false'));previousFocus?.focus({preventScroll:true});}
+function resetDrawerHorizontalPosition(){if(!drawer)return;drawer.scrollLeft=0;requestAnimationFrame(()=>{drawer.scrollLeft=0;});clearTimeout(drawerResetTimer);drawerResetTimer=setTimeout(()=>{drawer.scrollLeft=0;},480);}
+function openDrawer(){previousFocus=document.activeElement;clearTimeout(drawerFocusTimer);html.classList.add('drawer-open');body.classList.add('drawer-open');drawer.setAttribute('aria-hidden','false');openers.forEach(button=>button.setAttribute('aria-expanded','true'));resetDrawerHorizontalPosition();drawerFocusTimer=setTimeout(()=>closer?.focus({preventScroll:true}),460);if(window.gsap&&motionEnabled){gsap.fromTo('.contact-card',{x:24,opacity:0},{x:0,opacity:1,duration:.55,stagger:.08,ease:'power3.out',delay:.12});}}
+function closeDrawer(){clearTimeout(drawerResetTimer);clearTimeout(drawerFocusTimer);html.classList.remove('drawer-open');body.classList.remove('drawer-open');drawer.setAttribute('aria-hidden','true');openers.forEach(button=>button.setAttribute('aria-expanded','false'));previousFocus?.focus({preventScroll:true});}
 openers.forEach(button=>button.addEventListener('click',openDrawer));closer?.addEventListener('click',closeDrawer);backdrop?.addEventListener('click',closeDrawer);
 document.addEventListener('keydown',event=>{if(!body.classList.contains('drawer-open'))return;if(event.key==='Escape'){event.preventDefault();closeDrawer();return;}if(event.key!=='Tab')return;const items=focusable();if(!items.length)return;const first=items[0],last=items[items.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}});
 

@@ -90,23 +90,50 @@ export async function createScene(canvas,options,hooks={}){
 
   const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2(2,2),contactTarget=new THREE.Vector3(),neutralContact=new THREE.Vector3(-.85,-.1,1.05);
   let motionEnabled=Boolean(options.motionEnabled),pointerEnabled=true,pointerActive=false,pointerTargetYaw=0,pointerTargetPitch=0,pointerTargetRoll=0,pointerYaw=0,pointerPitch=0,pointerRoll=0,contactStrength=0,theme='olive',themeGlow=1;
-  const narrativeTarget={yaw:0,pitch:0,roll:0,scale:1,x:0,y:0,pointerWeight:1},narrativeCurrent={...narrativeTarget};let layout={x:.28,y:.12,scale:.94,mobile:false};
-  const rad=value=>THREE.MathUtils.degToRad(value),lerpPose=(a,b,p)=>({yaw:THREE.MathUtils.lerp(a.yaw,b.yaw,p),pitch:THREE.MathUtils.lerp(a.pitch,b.pitch,p),roll:THREE.MathUtils.lerp(a.roll,b.roll,p),scale:THREE.MathUtils.lerp(a.scale,b.scale,p),x:THREE.MathUtils.lerp(a.x,b.x,p),y:THREE.MathUtils.lerp(a.y,b.y,p),pointerWeight:THREE.MathUtils.lerp(a.pointerWeight,b.pointerWeight,p)});
-  const poses={hero:[{yaw:0,pitch:0,roll:0,scale:.78,x:3.4,y:0,pointerWeight:1},{yaw:rad(20),pitch:rad(-3),roll:rad(-6),scale:1.42,x:0,y:.02,pointerWeight:.2}],origin:[{yaw:rad(20),pitch:rad(-3),roll:rad(-6),scale:1.42,x:0,y:.02,pointerWeight:.2},{yaw:0,pitch:0,roll:0,scale:2.55,x:-.18,y:.04,pointerWeight:.08}],bridge:[{yaw:0,pitch:0,roll:0,scale:2.55,x:-.18,y:.04,pointerWeight:.08},{yaw:rad(-23),pitch:rad(3),roll:rad(5),scale:.78,x:2.6,y:.08,pointerWeight:.34}],motion:[{yaw:rad(-23),pitch:rad(3),roll:rad(5),scale:.78,x:2.6,y:.08,pointerWeight:.34},{yaw:rad(29),pitch:rad(-4),roll:rad(-9),scale:.68,x:4.8,y:.08,pointerWeight:.44}],contact:[{yaw:rad(29),pitch:rad(-4),roll:rad(-9),scale:.68,x:4.8,y:.08,pointerWeight:.44},{yaw:0,pitch:0,roll:0,scale:.48,x:3.2,y:-.18,pointerWeight:.88}]};
+  const narrativeTarget={yaw:0,pitch:0,roll:0,scale:.78,x:3.4,y:0,pointerWeight:1,opacity:1},narrativeCurrent={...narrativeTarget};let layout={x:.28,y:.12,scale:.94,mobile:false},storyRanges=[];
+  const rad=value=>THREE.MathUtils.degToRad(value),POSE_KEYS=['yaw','pitch','roll','scale','x','y','pointerWeight','opacity'];
+  const lerpPose=(a,b,p)=>Object.fromEntries(POSE_KEYS.map(key=>[key,THREE.MathUtils.lerp(a[key],b[key],p)]));
+  const smoothstep=value=>{const p=THREE.MathUtils.clamp(value,0,1);return p*p*(3-2*p);};
+  const pose=(values={})=>({yaw:0,pitch:0,roll:0,scale:1,x:0,y:0,pointerWeight:0,opacity:1,...values});
+  const reducedPose=pose({scale:.78,x:3.1,pointerWeight:.12});
+  let bottleKeyframes=[{progress:0,...narrativeTarget},{progress:1,...narrativeTarget}];
+  function rebuildBottleKeyframes(ranges){
+    const byName=Object.fromEntries(ranges.map(range=>[range.name,range])),origin=byName.origin,bridge=byName.bridge,motion=byName.motion,contact=byName.contact;
+    if(!origin||!bridge||!motion||!contact)return;
+    const at=(range,amount)=>THREE.MathUtils.lerp(range.start,range.end,amount);
+    bottleKeyframes=[
+      {progress:0,...pose({scale:.78,x:3.4,pointerWeight:1})},
+      {progress:origin.start,...pose({yaw:rad(20),pitch:rad(-3),roll:rad(-6),scale:1.42,x:0,y:.02,pointerWeight:.2})},
+      {progress:at(origin,.18),...pose({yaw:rad(16),pitch:rad(-2),roll:rad(-5),scale:1.65,x:-.04,y:.03,pointerWeight:.12})},
+      {progress:at(origin,.46),...pose({yaw:rad(7),pitch:rad(-1),roll:rad(-2),scale:2.2,x:-.12,y:.04,pointerWeight:.06,opacity:0})},
+      {progress:origin.end,...pose({yaw:rad(2),scale:2,x:.12,y:.04,pointerWeight:.04,opacity:0})},
+      {progress:at(bridge,.15),...pose({yaw:rad(-14),pitch:rad(2),roll:rad(3),scale:1.15,x:1.7,y:.06,pointerWeight:.12,opacity:0})},
+      {progress:at(bridge,.32),...pose({yaw:rad(-23),pitch:rad(3),roll:rad(5),scale:.78,x:2.6,y:.08,pointerWeight:.34,opacity:1})},
+      {progress:motion.start,...pose({yaw:rad(-23),pitch:rad(3),roll:rad(5),scale:.78,x:2.6,y:.08,pointerWeight:.34})},
+      {progress:contact.start,...pose({yaw:rad(29),pitch:rad(-4),roll:rad(-9),scale:.68,x:4.8,y:.08,pointerWeight:.44})},
+      {progress:1,...pose({scale:.48,x:3.2,y:-.18,pointerWeight:.88})}
+    ].sort((a,b)=>a.progress-b.progress);
+  }
+  function sampleBottlePose(progress){
+    const p=THREE.MathUtils.clamp(progress,0,1);let next=1;
+    while(next<bottleKeyframes.length&&bottleKeyframes[next].progress<p)next++;
+    const after=bottleKeyframes[Math.min(next,bottleKeyframes.length-1)],before=bottleKeyframes[Math.max(0,next-1)],span=Math.max(.000001,after.progress-before.progress);
+    return lerpPose(before,after,smoothstep((p-before.progress)/span));
+  }
   function setPointer(event){if(!motionEnabled||!pointerEnabled)return;const nx=(event.clientX/innerWidth)*2-1,ny=(event.clientY/innerHeight)*2-1;pointerTargetYaw=THREE.MathUtils.clamp(nx*MAX_YAW,-MAX_YAW,MAX_YAW);pointerTargetPitch=THREE.MathUtils.clamp(-ny*rad(4),-rad(4),rad(4));pointerTargetRoll=THREE.MathUtils.clamp(-nx*rad(2),-rad(2),rad(2));pointer.set(nx,-ny);pointerActive=true;}
   function clearPointer(){pointerTargetYaw=pointerTargetPitch=pointerTargetRoll=0;pointer.set(2,2);pointerActive=false;}
   interactionHost.addEventListener('pointermove',setPointer,{passive:true});interactionHost.addEventListener('pointerdown',setPointer,{passive:true});interactionHost.addEventListener('pointerleave',clearPointer,{passive:true});
 
   let running=motionEnabled,raf=0,last=performance.now(),lastFrame=0,elapsed=0,slow=0;
-  function applyComposite(immediate=false){const xFactor=layout.mobile?.58:1;if(immediate)Object.assign(narrativeCurrent,narrativeTarget);stage.position.set(layout.x+narrativeCurrent.x*xFactor,layout.y+narrativeCurrent.y,0);stage.scale.setScalar(layout.scale*narrativeCurrent.scale);bottleRig.rotation.set(narrativeCurrent.pitch+pointerPitch*narrativeCurrent.pointerWeight,physicalYaw(narrativeCurrent.yaw+pointerYaw*narrativeCurrent.pointerWeight),narrativeCurrent.roll+pointerRoll*narrativeCurrent.pointerWeight);}
+  function applyComposite(immediate=false){const xFactor=layout.mobile?.58:1;if(immediate)Object.assign(narrativeCurrent,narrativeTarget);stage.position.set(layout.x+narrativeCurrent.x*xFactor,layout.y+narrativeCurrent.y,0);stage.scale.setScalar(layout.scale*narrativeCurrent.scale);bottleRig.rotation.set(narrativeCurrent.pitch+pointerPitch*narrativeCurrent.pointerWeight,physicalYaw(narrativeCurrent.yaw+pointerYaw*narrativeCurrent.pointerWeight),narrativeCurrent.roll+pointerRoll*narrativeCurrent.pointerWeight);canvas.style.setProperty('--narrative-opacity',narrativeCurrent.opacity.toFixed(4));}
   function resize(){const r=host.getBoundingClientRect(),w=Math.max(1,r.width),h=Math.max(1,r.height),mobile=w<620,tabletPortrait=innerWidth>=700&&innerWidth<=900&&innerHeight>innerWidth;renderer.setSize(w,h,false);camera.aspect=w/h;camera.position.z=tabletPortrait?18.9:mobile?18.25:16.4;camera.updateProjectionMatrix();layout=tabletPortrait?{x:.06,y:.02,scale:.69,mobile:false}:mobile?{x:.24,y:.04,scale:.79,mobile:true}:{x:.28,y:.12,scale:.94,mobile:false};applyComposite(true);if(reflection)reflection.visible=!mobile&&!tabletPortrait;if(document.scrollingElement)document.scrollingElement.scrollLeft=0;renderer.render(scene,camera);}
   const observer=new ResizeObserver(resize);observer.observe(host);resize();
   renderer.compile(scene,camera);renderer.render(scene,camera);hooks.onFirstFrame?.();
 
   function physicalYaw(raw){const sign=Math.sign(raw),amount=Math.abs(raw);return sign*(amount<=SAFE_YAW?amount:SAFE_YAW+(amount-SAFE_YAW)*.22);}
   function animate(now){
-    if(!running)return;if(options.tier==='low'&&now-lastFrame<33){raf=requestAnimationFrame(animate);return;}lastFrame=now;const dt=Math.min((now-last)/1000,.05),damping=1-Math.exp(-dt*4.5),lightDamping=1-Math.exp(-dt*8);last=now;elapsed+=dt;
-    for(const key of['yaw','pitch','roll','scale','x','y','pointerWeight'])narrativeCurrent[key]=THREE.MathUtils.lerp(narrativeCurrent[key],narrativeTarget[key],damping);
+    if(!running)return;if(options.tier==='low'&&now-lastFrame<33){raf=requestAnimationFrame(animate);return;}lastFrame=now;const dt=Math.min((now-last)/1000,.05),damping=1-Math.exp(-dt*7),lightDamping=1-Math.exp(-dt*8);last=now;elapsed+=dt;
+    for(const key of POSE_KEYS)narrativeCurrent[key]=THREE.MathUtils.lerp(narrativeCurrent[key],narrativeTarget[key],damping);
     pointerYaw=THREE.MathUtils.lerp(pointerYaw,pointerTargetYaw,damping);pointerPitch=THREE.MathUtils.lerp(pointerPitch,pointerTargetPitch,damping);pointerRoll=THREE.MathUtils.lerp(pointerRoll,pointerTargetRoll,damping);applyComposite();bottleRig.rotation.z+=Math.sin(elapsed*.31)*.004;bottle.position.y=3.42+Math.sin(elapsed*.52)*.045;
     const finalYaw=narrativeCurrent.yaw+pointerYaw*narrativeCurrent.pointerWeight,excess=Math.max(0,Math.abs(finalYaw)-SAFE_YAW);label.rotation.y=THREE.MathUtils.lerp(label.rotation.y,-Math.sign(finalYaw)*excess*.34,damping);
     scene.updateMatrixWorld(true);let hit=null;if(pointerActive){raycaster.setFromCamera(pointer,camera);hit=raycaster.intersectObject(shell,false)[0]||null;}
@@ -119,14 +146,16 @@ export async function createScene(canvas,options,hooks={}){
   function renderStatic(){applyComposite(true);bottle.position.y=3.42;renderer.render(scene,camera);}
   function setMotionEnabled(value){motionEnabled=Boolean(value);if(!motionEnabled){clearPointer();pointerYaw=pointerPitch=pointerRoll=0;label.rotation.y=0;contactStrength=0;contact.material.opacity=0;ripple.material.opacity=0;contactLight.intensity=0;renderStatic();}setRunning(motionEnabled&&!document.hidden);}
   function setPointerEnabled(value){pointerEnabled=Boolean(value);if(!pointerEnabled)clearPointer();}
-  function setNarrativeProgress(name,progress){const pair=poses[name]||poses.hero,p=THREE.MathUtils.clamp(progress,0,1),pose=lerpPose(pair[0],pair[1],p);Object.assign(narrativeTarget,pose);Object.assign(narrativeCurrent,pose);applyComposite();if(!motionEnabled)renderStatic();}
-  function setNarrativeState(name){const pair=poses[name]||poses.hero;Object.assign(narrativeTarget,pair[1]);renderStatic();}
+  function setNarrativePose(nextPose,{immediate=false}={}){Object.assign(narrativeTarget,nextPose);if(immediate){Object.assign(narrativeCurrent,nextPose);applyComposite();renderer.render(scene,camera);}else if(!motionEnabled)renderStatic();}
+  function setStoryRanges(ranges){storyRanges=Array.isArray(ranges)?ranges.map(range=>({...range})):[];rebuildBottleKeyframes(storyRanges);}
+  function setStoryProgress(progress,{immediate=false}={}){setNarrativePose(sampleBottlePose(progress),{immediate:immediate||!motionEnabled});}
+  function setNarrativeState(){setNarrativePose(reducedPose,{immediate:true});}
   function setTheme(value){theme=value;themeGlow=theme==='paper'?.18:theme==='copper'?.48:1;renderer.toneMappingExposure=theme==='paper'?1.05:theme==='copper'?1.12:1.25;if(!motionEnabled)renderStatic();}
   function getLabelScreenRect(){scene.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(label),points=[];for(const x of[box.min.x,box.max.x])for(const y of[box.min.y,box.max.y])for(const z of[box.min.z,box.max.z])points.push(new THREE.Vector3(x,y,z).project(camera));const rect=canvas.getBoundingClientRect(),xs=points.map(p=>(p.x*.5+.5)*rect.width+rect.left),ys=points.map(p=>(-.5*p.y+.5)*rect.height+rect.top);return{left:Math.min(...xs),top:Math.min(...ys),right:Math.max(...xs),bottom:Math.max(...ys),width:Math.max(...xs)-Math.min(...xs),height:Math.max(...ys)-Math.min(...ys)};}
   const onVisibility=()=>setRunning(motionEnabled&&!document.hidden),onBlur=()=>setRunning(false),onFocus=()=>setRunning(motionEnabled);document.addEventListener('visibilitychange',onVisibility);addEventListener('blur',onBlur);addEventListener('focus',onFocus);
-  canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();setRunning(false);hooks.onFailure?.();});canvas.addEventListener('webglcontextrestored',()=>{renderer.render(scene,camera);hooks.onFirstFrame?.();setRunning(motionEnabled&&!document.hidden);});if(motionEnabled)raf=requestAnimationFrame(animate);
+  canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();setRunning(false);hooks.onFailure?.();});canvas.addEventListener('webglcontextrestored',()=>{applyComposite(true);renderer.render(scene,camera);hooks.onFirstFrame?.({restored:true});setRunning(motionEnabled&&!document.hidden);});if(motionEnabled)raf=requestAnimationFrame(animate);
   function dispose(){setRunning(false);observer.disconnect();interactionHost.removeEventListener('pointermove',setPointer);interactionHost.removeEventListener('pointerdown',setPointer);interactionHost.removeEventListener('pointerleave',clearPointer);document.removeEventListener('visibilitychange',onVisibility);removeEventListener('blur',onBlur);removeEventListener('focus',onFocus);scene.traverse(n=>{n.geometry?.dispose?.();if(n.material)(Array.isArray(n.material)?n.material:[n.material]).forEach(m=>{m.map?.dispose?.();m.dispose?.();});});environment.dispose();renderer.dispose();}
-  return{setNarrativeState,setNarrativeProgress,setPointerEnabled,setMotionEnabled,setTheme,getLabelScreenRect,resize,dispose};
+  return{setNarrativeState,setNarrativePose,setStoryRanges,setStoryProgress,setPointerEnabled,setMotionEnabled,setTheme,getLabelScreenRect,resize,dispose};
 }
 
 async function makeLabelTexture(renderer,compact){

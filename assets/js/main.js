@@ -1,12 +1,12 @@
-import{bindLanguageLinks}from'./i18n.js?v=20260717-origin-responsive-3';
-import{detectCapabilities,getPerformanceTier,supportsWebGL}from'./capabilities.js?v=20260717-origin-responsive-3';
-import{initNarrative}from'./narrative.js?v=20260717-origin-responsive-3';
+import{bindLanguageLinks}from'./i18n.js?v=20260717-bottle-continuity-1';
+import{detectCapabilities,getPerformanceTier,supportsWebGL}from'./capabilities.js?v=20260717-bottle-continuity-1';
+import{initNarrative}from'./narrative.js?v=20260717-bottle-continuity-1';
 
-const BUILD_ID='20260717-origin-responsive-3';
+const BUILD_ID='20260717-bottle-continuity-1';
 const body=document.body,shell=document.querySelector('.site-shell'),drawer=document.querySelector('#contact-panel'),backdrop=document.querySelector('.drawer-backdrop');
 const openers=[...document.querySelectorAll('[data-open-contact]')],closer=drawer?.querySelector('[data-close-contact]'),motionButton=document.querySelector('[data-motion-toggle]'),retryButton=document.querySelector('[data-webgl-retry]');
 const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)'),finePointer=matchMedia('(hover:hover) and (pointer:fine)'),motionStorageKey='eurobrands:3d-motion';
-let previousFocus=null,sceneController=null,narrativeController=null,webglInitializing=false,narrativeInitializing=false;
+let previousFocus=null,sceneController=null,narrativeController=null,webglInitializing=false,narrativeInitializing=false,sceneFrameReady=false;
 
 drawer?.setAttribute('aria-hidden','true');bindLanguageLinks();
 const capabilityMap=detectCapabilities();
@@ -35,7 +35,7 @@ updateMotionButton();motionButton?.addEventListener('click',()=>{applyMotion(!mo
 async function initializeNarrative(){if(narrativeInitializing)return;narrativeInitializing=true;try{if(document.readyState==='loading')await new Promise(resolve=>addEventListener('DOMContentLoaded',resolve,{once:true}));narrativeController?.dispose?.();narrativeController=await initNarrative(sceneController,{reducedMotion:!motionEnabled});}finally{narrativeInitializing=false;}}
 reducedMotion.addEventListener?.('change',()=>{applyMotion(preferredMotion());initializeNarrative();});
 function webglFailed(){body.classList.remove('webgl-pending','webgl-loading','webgl-ready');body.classList.add('webgl-failed');}
-async function initWebGL(){if(webglInitializing)return false;if(!supportsWebGL()){webglFailed();await initializeNarrative();return false;}webglInitializing=true;body.classList.remove('webgl-failed','webgl-ready');body.classList.add('webgl-pending');const loaderTimer=setTimeout(()=>{if(body.classList.contains('webgl-pending')){body.classList.remove('webgl-pending');body.classList.add('webgl-loading');}},180);let success=false;try{sceneController?.dispose?.();sceneController=null;const{createScene}=await import(`./scene.js?v=${BUILD_ID}`);sceneController=await createScene(document.querySelector('#scene'),{...perf,reducedMotion:reducedMotion.matches,motionEnabled},{onFirstFrame(){clearTimeout(loaderTimer);body.classList.remove('webgl-pending','webgl-loading','webgl-failed');body.classList.add('webgl-ready');},onFailure(){webglFailed();}});success=true;}catch(error){clearTimeout(loaderTimer);console.warn('[EuroBrands WebGL] Scene unavailable',error);webglFailed();}finally{webglInitializing=false;}await initializeNarrative();return success;}
+async function initWebGL(){if(webglInitializing)return false;if(!supportsWebGL()){webglFailed();await initializeNarrative();return false;}webglInitializing=true;sceneFrameReady=false;body.classList.remove('webgl-failed','webgl-ready');body.classList.add('webgl-pending');const loaderTimer=setTimeout(()=>{if(body.classList.contains('webgl-pending')){body.classList.remove('webgl-pending');body.classList.add('webgl-loading');}},180);let success=false;try{sceneController?.dispose?.();sceneController=null;const{createScene}=await import(`./scene.js?v=${BUILD_ID}`);sceneController=await createScene(document.querySelector('#scene'),{...perf,reducedMotion:reducedMotion.matches,motionEnabled},{onFirstFrame(event){clearTimeout(loaderTimer);sceneFrameReady=true;if(event?.restored&&sceneController)narrativeController?.sync?.({immediate:true});},onFailure(){webglFailed();}});success=true;}catch(error){clearTimeout(loaderTimer);console.warn('[EuroBrands WebGL] Scene unavailable',error);webglFailed();}finally{webglInitializing=false;}await initializeNarrative();if(success&&sceneFrameReady){body.classList.remove('webgl-pending','webgl-loading','webgl-failed');body.classList.add('webgl-ready');}return success;}
 retryButton?.addEventListener('click',initWebGL);
 addEventListener('pagehide',event=>{if(!event.persisted){narrativeController?.dispose?.();sceneController?.dispose?.();}});
 initWebGL();

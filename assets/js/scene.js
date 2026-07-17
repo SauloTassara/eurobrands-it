@@ -4,13 +4,36 @@ import{RoomEnvironment}from'../vendor/three/RoomEnvironment.js';
 const OLIVE=0x101d14,COPPER=0xd58d6d,IVORY=0xeee7d8;
 const MAX_YAW=THREE.MathUtils.degToRad(70),SAFE_YAW=THREE.MathUtils.degToRad(38);
 
+function createRenderer(placeholder,options){
+  const attempts=[
+    {type:'webgl2',powerPreference:'high-performance'},
+    {type:'webgl2',powerPreference:'default'},
+    {type:'webgl',powerPreference:'default'},
+    {type:'webgl',powerPreference:'low-power'}
+  ];
+  const failures=[];
+  for(const attempt of attempts){
+    const candidate=placeholder.cloneNode(false);
+    try{
+      const attributes={alpha:true,antialias:options.tier!=='low',depth:true,stencil:false,premultipliedAlpha:true,preserveDrawingBuffer:Boolean(options.reducedMotion),powerPreference:attempt.powerPreference,failIfMajorPerformanceCaveat:false};
+      const context=candidate.getContext(attempt.type,attributes);
+      if(!context)throw new Error(`${attempt.type} context unavailable`);
+      const renderer=new THREE.WebGLRenderer({canvas:candidate,context,alpha:true,antialias:attributes.antialias,powerPreference:attempt.powerPreference});
+      candidate.dataset.webglContext=attempt.type;candidate.dataset.powerPreference=attempt.powerPreference;
+      placeholder.replaceWith(candidate);
+      return{renderer,canvas:candidate};
+    }catch(error){failures.push(`${attempt.type}/${attempt.powerPreference}: ${error?.message||error}`);candidate.getContext(attempt.type)?.getExtension('WEBGL_lose_context')?.loseContext();}
+  }
+  throw new Error(`Renderer initialization failed (${failures.join(' | ')})`);
+}
+
 export async function createScene(canvas,options,hooks={}){
   if(!canvas)throw new Error('Missing WebGL canvas');
   const host=canvas.parentElement,interactionHost=document.querySelector('.site-shell')||host,scene=new THREE.Scene();
   scene.fog=new THREE.FogExp2(0x09110b,.038);
   const camera=new THREE.PerspectiveCamera(29,1,.1,80);camera.position.set(0,.1,16.4);
-  const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:options.tier!=='low',powerPreference:options.tier==='high'?'high-performance':'default'});
-  renderer.setPixelRatio(options.dpr);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.25;renderer.shadowMap.enabled=options.tier==='high';renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.debug.checkShaderErrors=false;
+  const rendererResult=createRenderer(canvas,options),renderer=rendererResult.renderer;canvas=rendererResult.canvas;
+  renderer.setPixelRatio(options.dpr);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.25;renderer.shadowMap.enabled=options.tier==='high';renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   const room=new RoomEnvironment(),pmrem=new THREE.PMREMGenerator(renderer),environment=pmrem.fromScene(room,.04);scene.environment=environment.texture;room.traverse(n=>{n.geometry?.dispose?.();n.material?.dispose?.();});pmrem.dispose();
 
   scene.add(new THREE.HemisphereLight(0xdce8da,0x030705,.48));
@@ -65,19 +88,19 @@ export async function createScene(canvas,options,hooks={}){
   const particlesGeometry=new THREE.BufferGeometry(),positions=[];for(let i=0;i<options.particles;i++){const a=Math.random()*Math.PI*2,r=1.6+Math.random()*2.5;positions.push(Math.cos(a)*r,-2.5+Math.random()*5.8,Math.sin(a)*r-1.2);}particlesGeometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   const particlesMaterial=new THREE.PointsMaterial({color:0xd99a7a,size:options.tier==='high'?.028:.021,transparent:true,opacity:.28,sizeAttenuation:true,depthWrite:false});const particles=new THREE.Points(particlesGeometry,particlesMaterial);stage.add(particles);
 
-  const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2(2,2),contactTarget=new THREE.Vector3(),neutralContact=new THREE.Vector3(-.85,-.1,1.05);let pointerActive=false,targetYaw=0,targetTilt=0,targetRoll=0,currentYaw=0,currentTilt=0,currentRoll=0,contactStrength=0;
-  function setPointer(event){const nx=(event.clientX/innerWidth)*2-1,ny=(event.clientY/innerHeight)*2-1;targetYaw=THREE.MathUtils.clamp(nx*MAX_YAW,-MAX_YAW,MAX_YAW);targetTilt=THREE.MathUtils.clamp(-ny*THREE.MathUtils.degToRad(4),-THREE.MathUtils.degToRad(4),THREE.MathUtils.degToRad(4));targetRoll=THREE.MathUtils.clamp(-nx*THREE.MathUtils.degToRad(2),-THREE.MathUtils.degToRad(2),THREE.MathUtils.degToRad(2));pointer.set(nx,-ny);pointerActive=true;}
+  const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2(2,2),contactTarget=new THREE.Vector3(),neutralContact=new THREE.Vector3(-.85,-.1,1.05);let motionEnabled=Boolean(options.motionEnabled),pointerActive=false,targetYaw=0,targetTilt=0,targetRoll=0,currentYaw=0,currentTilt=0,currentRoll=0,contactStrength=0;
+  function setPointer(event){if(!motionEnabled)return;const nx=(event.clientX/innerWidth)*2-1,ny=(event.clientY/innerHeight)*2-1;targetYaw=THREE.MathUtils.clamp(nx*MAX_YAW,-MAX_YAW,MAX_YAW);targetTilt=THREE.MathUtils.clamp(-ny*THREE.MathUtils.degToRad(4),-THREE.MathUtils.degToRad(4),THREE.MathUtils.degToRad(4));targetRoll=THREE.MathUtils.clamp(-nx*THREE.MathUtils.degToRad(2),-THREE.MathUtils.degToRad(2),THREE.MathUtils.degToRad(2));pointer.set(nx,-ny);pointerActive=true;}
   function clearPointer(){targetYaw=0;targetTilt=0;targetRoll=0;pointer.set(2,2);pointerActive=false;}
   interactionHost.addEventListener('pointermove',setPointer,{passive:true});interactionHost.addEventListener('pointerdown',setPointer,{passive:true});interactionHost.addEventListener('pointerleave',clearPointer,{passive:true});
 
-  let running=true,raf=0,last=performance.now(),elapsed=0,slow=0;
+  let running=motionEnabled,raf=0,last=performance.now(),lastFrame=0,elapsed=0,slow=0;
   function resize(){const r=host.getBoundingClientRect(),w=Math.max(1,r.width),h=Math.max(1,r.height),mobile=w<620,tabletPortrait=innerWidth>=700&&innerWidth<=900&&innerHeight>innerWidth;renderer.setSize(w,h,false);camera.aspect=w/h;camera.position.z=tabletPortrait?18.9:mobile?18.25:16.4;camera.updateProjectionMatrix();stage.position.set(tabletPortrait?.06:mobile?.24:.28,tabletPortrait?.02:mobile?.04:.12,0);stage.scale.setScalar(tabletPortrait?.69:mobile?.79:.94);if(reflection)reflection.visible=!mobile&&!tabletPortrait;if(document.scrollingElement)document.scrollingElement.scrollLeft=0;}
   const observer=new ResizeObserver(resize);observer.observe(host);resize();
-  renderer.compile(scene,camera);renderer.render(scene,camera);await new Promise(resolve=>requestAnimationFrame(resolve));hooks.onFirstFrame?.();
+  renderer.compile(scene,camera);renderer.render(scene,camera);hooks.onFirstFrame?.();
 
   function physicalYaw(raw){const sign=Math.sign(raw),amount=Math.abs(raw);return sign*(amount<=SAFE_YAW?amount:SAFE_YAW+(amount-SAFE_YAW)*.22);}
   function animate(now){
-    if(!running)return;const dt=Math.min((now-last)/1000,.05),damping=1-Math.exp(-dt*4.5),lightDamping=1-Math.exp(-dt*8);last=now;elapsed+=dt;
+    if(!running)return;if(options.tier==='low'&&now-lastFrame<33){raf=requestAnimationFrame(animate);return;}lastFrame=now;const dt=Math.min((now-last)/1000,.05),damping=1-Math.exp(-dt*4.5),lightDamping=1-Math.exp(-dt*8);last=now;elapsed+=dt;
     currentYaw=THREE.MathUtils.lerp(currentYaw,physicalYaw(targetYaw),damping);currentTilt=THREE.MathUtils.lerp(currentTilt,targetTilt,damping);currentRoll=THREE.MathUtils.lerp(currentRoll,targetRoll,damping);
     bottleRig.rotation.y=currentYaw;bottleRig.rotation.x=currentTilt;bottleRig.rotation.z=currentRoll+Math.sin(elapsed*.31)*.004;bottle.position.y=3.42+Math.sin(elapsed*.52)*.045;
     const excess=Math.max(0,Math.abs(currentYaw)-SAFE_YAW);label.rotation.y=THREE.MathUtils.lerp(label.rotation.y,-Math.sign(currentYaw)*excess*.34,damping);
@@ -88,9 +111,15 @@ export async function createScene(canvas,options,hooks={}){
     renderer.render(scene,camera);if(dt>.042)slow++;else slow=Math.max(0,slow-1);if(slow>90&&renderer.getPixelRatio()>1){renderer.setPixelRatio(1);resize();slow=0;}raf=requestAnimationFrame(animate);
   }
   function setRunning(value){if(value===running)return;running=value;if(value){last=performance.now();raf=requestAnimationFrame(animate);}else cancelAnimationFrame(raf);}
-  const onVisibility=()=>setRunning(!document.hidden),onBlur=()=>setRunning(false),onFocus=()=>setRunning(true);document.addEventListener('visibilitychange',onVisibility);addEventListener('blur',onBlur);addEventListener('focus',onFocus);
-  canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();setRunning(false);document.body.classList.remove('webgl-ready','webgl-loading');document.body.classList.add('webgl-failed');});canvas.addEventListener('webglcontextrestored',()=>location.reload());raf=requestAnimationFrame(animate);
-  return()=>{setRunning(false);observer.disconnect();interactionHost.removeEventListener('pointermove',setPointer);interactionHost.removeEventListener('pointerdown',setPointer);interactionHost.removeEventListener('pointerleave',clearPointer);document.removeEventListener('visibilitychange',onVisibility);removeEventListener('blur',onBlur);removeEventListener('focus',onFocus);scene.traverse(n=>{n.geometry?.dispose?.();if(n.material)(Array.isArray(n.material)?n.material:[n.material]).forEach(m=>{m.map?.dispose?.();m.dispose?.();});});environment.dispose();renderer.dispose();};
+  function setMotionEnabled(value){
+    motionEnabled=Boolean(value);
+    if(!motionEnabled){clearPointer();currentYaw=targetYaw=0;currentTilt=targetTilt=0;currentRoll=targetRoll=0;bottleRig.rotation.set(0,0,0);bottle.position.y=3.42;label.rotation.y=0;contactStrength=0;contact.material.opacity=0;ripple.material.opacity=0;contactLight.intensity=0;renderer.render(scene,camera);}
+    setRunning(motionEnabled&&!document.hidden);
+  }
+  const onVisibility=()=>setRunning(motionEnabled&&!document.hidden),onBlur=()=>setRunning(false),onFocus=()=>setRunning(motionEnabled);document.addEventListener('visibilitychange',onVisibility);addEventListener('blur',onBlur);addEventListener('focus',onFocus);
+  canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();setRunning(false);hooks.onFailure?.();});canvas.addEventListener('webglcontextrestored',()=>{renderer.render(scene,camera);hooks.onFirstFrame?.();setRunning(motionEnabled&&!document.hidden);});if(motionEnabled)raf=requestAnimationFrame(animate);
+  function dispose(){setRunning(false);observer.disconnect();interactionHost.removeEventListener('pointermove',setPointer);interactionHost.removeEventListener('pointerdown',setPointer);interactionHost.removeEventListener('pointerleave',clearPointer);document.removeEventListener('visibilitychange',onVisibility);removeEventListener('blur',onBlur);removeEventListener('focus',onFocus);scene.traverse(n=>{n.geometry?.dispose?.();if(n.material)(Array.isArray(n.material)?n.material:[n.material]).forEach(m=>{m.map?.dispose?.();m.dispose?.();});});environment.dispose();renderer.dispose();}
+  return{setMotionEnabled,dispose};
 }
 
 async function makeLabelTexture(renderer,compact){

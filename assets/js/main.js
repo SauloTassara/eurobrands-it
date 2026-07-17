@@ -1,8 +1,8 @@
-import{bindLanguageLinks}from'./i18n.js?v=20260717-ios-drawer-1';
-import{detectCapabilities,getPerformanceTier,supportsWebGL}from'./capabilities.js?v=20260717-ios-drawer-1';
-import{initNarrative}from'./narrative.js?v=20260717-ios-drawer-1';
+import{bindLanguageLinks}from'./i18n.js?v=20260717-chamber-logo-1';
+import{detectCapabilities,getPerformanceTier,supportsWebGL}from'./capabilities.js?v=20260717-chamber-logo-1';
+import{initNarrative}from'./narrative.js?v=20260717-chamber-logo-1';
 
-const BUILD_ID='20260717-ios-drawer-1';
+const BUILD_ID='20260717-chamber-logo-1';
 const html=document.documentElement,body=document.body,shell=document.querySelector('.site-shell'),drawer=document.querySelector('#contact-panel'),backdrop=document.querySelector('.drawer-backdrop');
 const openers=[...document.querySelectorAll('[data-open-contact]')],closer=drawer?.querySelector('[data-close-contact]'),motionButton=document.querySelector('[data-motion-toggle]'),retryButton=document.querySelector('[data-webgl-retry]');
 const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)'),finePointer=matchMedia('(hover:hover) and (pointer:fine)'),motionStorageKey='eurobrands:3d-motion';
